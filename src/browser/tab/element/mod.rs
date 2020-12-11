@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 
-use failure::{Fail, Fallible};
+use anyhow::Result;
 use log::*;
+use thiserror::Error;
 
 use crate::browser::tab::point::Point;
 use crate::browser::tab::NoElementFound;
@@ -39,7 +40,7 @@ impl<'a> Element<'a> {
     /// Using a 'node_id', of the type returned by QuerySelector and QuerySelectorAll, this finds
     /// the 'backend_node_id' and 'remote_object_id' which are stable identifiers, unlike node_id.
     /// We use these two when making various calls to the API because of that.
-    pub fn new(parent: &'a super::Tab, node_id: dom::NodeId) -> Fallible<Self> {
+    pub fn new(parent: &'a super::Tab, node_id: dom::NodeId) -> Result<Self> {
         if node_id == 0 {
             return Err(NoElementFound {}.into());
         }
@@ -75,12 +76,12 @@ impl<'a> Element<'a> {
     /// ```
     ///
     /// ```rust
-    /// # use failure::Fallible;
+    /// # use anyhow::Result;
     /// # // Awful hack to get access to testing utils common between integration, doctest, and unit tests
     /// # mod server {
     /// #     include!("../../../testing_utils/server.rs");
     /// # }
-    /// # fn main() -> Fallible<()> {
+    /// # fn main() -> Result<()> {
     /// #
     /// use headless_chrome::Browser;
     ///
@@ -98,7 +99,7 @@ impl<'a> Element<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn find_element(&self, selector: &str) -> Fallible<Self> {
+    pub fn find_element(&self, selector: &str) -> Result<Self> {
         self.parent
             .run_query_selector_on_node(self.node_id, selector)
     }
@@ -112,12 +113,12 @@ impl<'a> Element<'a> {
     /// ```
     ///
     /// ```rust
-    /// # use failure::Fallible;
+    /// # use anyhow::Result;
     /// # // Awful hack to get access to testing utils common between integration, doctest, and unit tests
     /// # mod server {
     /// #     include!("../../../testing_utils/server.rs");
     /// # }
-    /// # fn main() -> Fallible<()> {
+    /// # fn main() -> Result<()> {
     /// #
     /// use headless_chrome::Browser;
     ///
@@ -134,20 +135,20 @@ impl<'a> Element<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn find_elements(&self, selector: &str) -> Fallible<Vec<Self>> {
+    pub fn find_elements(&self, selector: &str) -> Result<Vec<Self>> {
         self.parent
             .run_query_selector_all_on_node(self.node_id, selector)
     }
 
     /// Moves the mouse to the middle of this element
-    pub fn move_mouse_over(&self) -> Fallible<&Self> {
+    pub fn move_mouse_over(&self) -> Result<&Self> {
         self.scroll_into_view()?;
         let midpoint = self.get_midpoint()?;
         self.parent.move_mouse_to_point(midpoint)?;
         Ok(self)
     }
 
-    pub fn click(&self) -> Fallible<&Self> {
+    pub fn click(&self) -> Result<&Self> {
         self.scroll_into_view()?;
         debug!("Clicking element {:?}", &self);
         let midpoint = self.get_midpoint()?;
@@ -155,7 +156,7 @@ impl<'a> Element<'a> {
         Ok(self)
     }
 
-    pub fn type_into(&self, text: &str) -> Fallible<&Self> {
+    pub fn type_into(&self, text: &str) -> Result<&Self> {
         self.click()?;
 
         debug!("Typing into element ( {:?} ): {}", &self, text);
@@ -169,7 +170,7 @@ impl<'a> Element<'a> {
         &self,
         function_declaration: &str,
         await_promise: bool,
-    ) -> Fallible<runtime::methods::RemoteObject> {
+    ) -> Result<runtime::methods::RemoteObject> {
         let result = self
             .parent
             .call_method(runtime::methods::CallFunctionOn {
@@ -185,7 +186,7 @@ impl<'a> Element<'a> {
         Ok(result)
     }
 
-    pub fn focus(&self) -> Fallible<&Self> {
+    pub fn focus(&self) -> Result<&Self> {
         self.scroll_into_view()?;
         self.parent.call_method(dom::methods::Focus {
             backend_node_id: Some(self.backend_node_id),
@@ -202,8 +203,8 @@ impl<'a> Element<'a> {
     /// Note: if you somehow call this on a node that's not an HTML Element (e.g. `document`), this
     /// will fail.
     /// ```rust
-    /// # use failure::Fallible;
-    /// # fn main() -> Fallible<()> {
+    /// # use anyhow::Result;
+    /// # fn main() -> Result<()> {
     /// #
     /// use headless_chrome::Browser;
     /// use std::time::Duration;
@@ -218,7 +219,7 @@ impl<'a> Element<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn get_inner_text(&self) -> Fallible<String> {
+    pub fn get_inner_text(&self) -> Result<String> {
         let text: String = serde_json::from_value(
             self.call_js_fn("function() { return this.innerText }", false)?
                 .value
@@ -227,7 +228,7 @@ impl<'a> Element<'a> {
         Ok(text)
     }
 
-    pub fn get_description(&self) -> Fallible<dom::Node> {
+    pub fn get_description(&self) -> Result<dom::Node> {
         let node = self
             .parent
             .call_method(dom::methods::DescribeNode {
@@ -244,8 +245,8 @@ impl<'a> Element<'a> {
     /// The screenshot is taken from the surface using this element's content-box.
     ///
     /// ```rust,no_run
-    /// # use failure::Fallible;
-    /// # fn main() -> Fallible<()> {
+    /// # use anyhow::Result;
+    /// # fn main() -> Result<()> {
     /// #
     /// use headless_chrome::{protocol::page::ScreenshotFormat, Browser};
     /// let browser = Browser::default()?;
@@ -257,13 +258,13 @@ impl<'a> Element<'a> {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn capture_screenshot(&self, format: page::ScreenshotFormat) -> Fallible<Vec<u8>> {
+    pub fn capture_screenshot(&self, format: page::ScreenshotFormat) -> Result<Vec<u8>> {
         self.scroll_into_view()?;
         self.parent
             .capture_screenshot(format, Some(self.get_box_model()?.content_viewport()), true)
     }
 
-    pub fn set_input_files(&self, file_paths: &[&str]) -> Fallible<&Self> {
+    pub fn set_input_files(&self, file_paths: &[&str]) -> Result<&Self> {
         self.parent.call_method(dom::methods::SetFileInputFiles {
             files: file_paths,
             backend_node_id: Some(self.backend_node_id),
@@ -276,7 +277,7 @@ impl<'a> Element<'a> {
     /// Scrolls the current element into view
     ///
     /// Used prior to any action applied to the current element to ensure action is duable.
-    pub fn scroll_into_view(&self) -> Fallible<&Self> {
+    pub fn scroll_into_view(&self) -> Result<&Self> {
         let result = self.call_js_fn(
             "async function() {
                 if (!this.isConnected)
@@ -311,13 +312,13 @@ impl<'a> Element<'a> {
         Ok(self)
     }
 
-    pub fn get_attributes(&self) -> Fallible<Option<dom::NodeAttributes>> {
+    pub fn get_attributes(&self) -> Result<Option<dom::NodeAttributes>> {
         let description = self.get_description()?;
         Ok(description.attributes)
     }
 
     /// Get boxes for this element
-    pub fn get_box_model(&self) -> Fallible<BoxModel> {
+    pub fn get_box_model(&self) -> Result<BoxModel> {
         let model = self
             .parent
             .call_method(dom::methods::GetBoxModel {
@@ -336,7 +337,7 @@ impl<'a> Element<'a> {
         })
     }
 
-    pub fn get_midpoint(&self) -> Fallible<Point> {
+    pub fn get_midpoint(&self) -> Result<Point> {
         let return_object = self.parent.call_method(dom::methods::GetContentQuads {
             node_id: None,
             backend_node_id: Some(self.backend_node_id),
@@ -348,7 +349,7 @@ impl<'a> Element<'a> {
         Ok((input_quad.bottom_right + input_quad.top_left) / 2.0)
     }
 
-    pub fn get_js_midpoint(&self) -> Fallible<Point> {
+    pub fn get_js_midpoint(&self) -> Result<Point> {
         let result =
             self.call_js_fn("function(){ return this.getBoundingClientRect(); }", false)?;
 
@@ -372,8 +373,8 @@ impl<'a> Element<'a> {
     }
 }
 
-#[derive(Debug, Fail)]
-#[fail(display = "Scrolling element into view failed: {}", error_text)]
+#[derive(Debug, Error)]
+#[error("Scrolling element into view failed: {error_text}")]
 struct ScrollFailed {
     error_text: String,
 }

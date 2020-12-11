@@ -1,7 +1,7 @@
 use std::sync::mpsc;
 use std::sync::Mutex;
 
-use failure::Fallible;
+use anyhow::Result;
 use log::*;
 use websocket::client::sync::Client;
 use websocket::stream::sync::TcpStream;
@@ -27,7 +27,7 @@ impl WebSocketConnection {
         ws_url: &str,
         process_id: Option<u32>,
         messages_tx: mpsc::Sender<protocol::Message>,
-    ) -> Fallible<Self> {
+    ) -> Result<Self> {
         let connection = Self::websocket_connection(&ws_url)?;
         let (websocket_receiver, sender) = connection.split()?;
 
@@ -105,7 +105,7 @@ impl WebSocketConnection {
         }
     }
 
-    pub fn websocket_connection(ws_url: &str) -> Fallible<Client<TcpStream>> {
+    pub fn websocket_connection(ws_url: &str) -> Result<Client<TcpStream>> {
         let client = ClientBuilder::new(ws_url)?.connect_insecure()?;
 
         debug!("Successfully connected to WebSocket: {}", ws_url);
@@ -113,7 +113,7 @@ impl WebSocketConnection {
         Ok(client)
     }
 
-    pub fn send_message(&self, message_text: &str) -> Fallible<()> {
+    pub fn send_message(&self, message_text: &str) -> Result<()> {
         let message = websocket::Message::text(message_text);
         let mut sender = self.sender.lock().unwrap();
         sender.send_message(&message)?;

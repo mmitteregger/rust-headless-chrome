@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use failure::Fallible;
+use anyhow::Result;
 use log::*;
 use serde;
 
@@ -50,8 +50,8 @@ mod transport;
 ///
 /// Option 1: Managing a Chrome process
 /// ```rust
-/// # use failure::Fallible;
-/// # fn main() -> Fallible<()> {
+/// # use anyhow::Result;
+/// # fn main() -> Result<()> {
 /// #
 /// use headless_chrome::Browser;
 /// let browser = Browser::default()?;
@@ -81,7 +81,7 @@ impl Browser {
     ///
     /// The browser will have its user data (aka "profile") directory stored in a temporary directory.
     /// The browser process will be killed when this struct is dropped.
-    pub fn new(launch_options: LaunchOptions) -> Fallible<Self> {
+    pub fn new(launch_options: LaunchOptions) -> Result<Self> {
         let idle_browser_timeout = launch_options.idle_browser_timeout;
         let process = Process::new(launch_options)?;
         let process_id = process.get_id();
@@ -97,7 +97,7 @@ impl Browser {
 
     /// Calls [`new`] with options to launch a headless browser using whatever Chrome / Chromium
     /// binary can be found on the system.
-    pub fn default() -> Fallible<Self> {
+    pub fn default() -> Result<Self> {
         let launch_options = LaunchOptions::default_builder()
             .path(Some(default_executable().unwrap()))
             .build()
@@ -106,7 +106,7 @@ impl Browser {
     }
 
     /// Allows you to drive an externally-launched Chrome process instead of launch one via [`new`].
-    pub fn connect(debug_ws_url: String) -> Fallible<Self> {
+    pub fn connect(debug_ws_url: String) -> Result<Self> {
         let transport = Arc::new(Transport::new(debug_ws_url, None, Duration::from_secs(30))?);
         trace!("created transport");
 
@@ -117,7 +117,7 @@ impl Browser {
         process: Option<Process>,
         transport: Arc<Transport>,
         idle_browser_timeout: Duration,
-    ) -> Fallible<Self> {
+    ) -> Result<Self> {
         let tabs = Arc::new(Mutex::new(vec![]));
 
         let (shutdown_tx, shutdown_rx) = mpsc::channel();
@@ -165,7 +165,7 @@ impl Browser {
     /// Chrome always launches with at least one tab. The reason we have to 'wait' is because information
     /// about that tab isn't available *immediately* after starting the process. Tabs are behind `Arc`s
     /// because they each have their own thread which handles events and method responses directed to them.
-    pub fn wait_for_initial_tab(&self) -> Fallible<Arc<Tab>> {
+    pub fn wait_for_initial_tab(&self) -> Result<Arc<Tab>> {
         util::Wait::with_timeout(Duration::from_secs(10))
             .until(|| self.tabs.lock().unwrap().first().map(|tab| Arc::clone(tab)))
             .map_err(Into::into)
@@ -176,8 +176,8 @@ impl Browser {
     /// If you want to specify its starting options, see `new_tab_with_options`.
     ///
     /// ```rust
-    /// # use failure::Fallible;
-    /// # fn main() -> Fallible<()> {
+    /// # use anyhow::Result;
+    /// # fn main() -> Result<()> {
     /// #
     /// # use headless_chrome::Browser;
     /// # let browser = Browser::default()?;
@@ -189,7 +189,7 @@ impl Browser {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn new_tab(&self) -> Fallible<Arc<Tab>> {
+    pub fn new_tab(&self) -> Result<Arc<Tab>> {
         let default_blank_tab = CreateTarget {
             url: "about:blank",
             width: None,
@@ -202,8 +202,8 @@ impl Browser {
 
     /// Create a new tab with a starting url, height / width, context ID and 'frame control'
     /// ```rust
-    /// # use failure::Fallible;
-    /// # fn main() -> Fallible<()> {
+    /// # use anyhow::Result;
+    /// # fn main() -> Result<()> {
     /// #
     /// # use headless_chrome::{Browser, protocol::target::methods::CreateTarget};
     /// # let browser = Browser::default()?;
@@ -218,7 +218,7 @@ impl Browser {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn new_tab_with_options(&self, create_target_params: CreateTarget) -> Fallible<Arc<Tab>> {
+    pub fn new_tab_with_options(&self, create_target_params: CreateTarget) -> Result<Arc<Tab>> {
         let target_id = self.call_method(create_target_params)?.target_id;
 
         util::Wait::with_timeout(Duration::from_secs(20))
@@ -236,7 +236,7 @@ impl Browser {
     }
 
     /// Creates the equivalent of a new incognito window, AKA a browser context
-    pub fn new_context(&self) -> Fallible<context::Context> {
+    pub fn new_context(&self) -> Result<context::Context> {
         debug!("Creating new browser context");
         let context_id = self
             .call_method(protocol::target::methods::CreateBrowserContext {})?
@@ -248,8 +248,8 @@ impl Browser {
     /// Get version information
     ///
     /// ```rust
-    /// # use failure::Fallible;
-    /// # fn main() -> Fallible<()> {
+    /// # use anyhow::Result;
+    /// # fn main() -> Result<()> {
     /// #
     /// # use headless_chrome::Browser;
     /// # let browser = Browser::default()?;
@@ -259,7 +259,7 @@ impl Browser {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn get_version(&self) -> Fallible<VersionInformationReturnObject> {
+    pub fn get_version(&self) -> Result<VersionInformationReturnObject> {
         self.call_method(GetVersion {})
     }
 
@@ -358,7 +358,7 @@ impl Browser {
     /// Call a browser method.
     ///
     /// See the `cdtp` module documentation for available methods.
-    fn call_method<C>(&self, method: C) -> Fallible<C::ReturnObject>
+    fn call_method<C>(&self, method: C) -> Result<C::ReturnObject>
     where
         C: protocol::Method + serde::Serialize,
     {

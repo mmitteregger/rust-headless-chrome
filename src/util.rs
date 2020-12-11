@@ -1,10 +1,10 @@
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use failure::{Error, Fail, Fallible};
+use anyhow::{Error, Result};
 
-#[derive(Debug, Fail)]
-#[fail(display = "The event waited for never came")]
+#[derive(Debug, thiserror::Error)]
+#[error("The event waited for never came")]
 pub struct Timeout;
 
 /// A helper to wait until some event has passed.
@@ -79,11 +79,11 @@ impl Wait {
     /// You can use `failure::Error::downcast::<YourStructName>` out-of-the-box,
     /// if you need to ignore one expected error, or you can implement a matching closure
     /// that responds to multiple error types.
-    pub fn strict_until<F, D, E, G>(&self, predicate: F, downcast: D) -> Fallible<G>
+    pub fn strict_until<F, D, E, G>(&self, predicate: F, downcast: D) -> Result<G>
     where
-        F: FnMut() -> Fallible<G>,
-        D: FnMut(Error) -> Fallible<E>,
-        E: Fail,
+        F: FnMut() -> Result<G>,
+        D: FnMut(Error) -> Result<E>,
+        E: std::error::Error + Send + Sync + 'static,
     {
         let mut predicate = predicate;
         let mut downcast = downcast;

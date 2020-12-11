@@ -5,8 +5,8 @@ use std::{
     str::FromStr,
 };
 
+use anyhow::{bail, Context, Result};
 use directories_next::ProjectDirs;
-use failure::{format_err, Fallible};
 use log::*;
 use ureq;
 use walkdir::WalkDir;
@@ -90,12 +90,12 @@ pub struct Fetcher {
 }
 
 impl Fetcher {
-    pub fn new(options: FetcherOptions) -> Fallible<Self> {
+    pub fn new(options: FetcherOptions) -> Result<Self> {
         Ok(Self { options })
     }
 
     // look for good existing installation, if none exists then download and install
-    pub fn fetch(&self) -> Fallible<PathBuf> {
+    pub fn fetch(&self) -> Result<PathBuf> {
         if let Ok(chrome_path) = self.chrome_path() {
             // we found it!
             return Ok(chrome_path);
@@ -111,11 +111,11 @@ impl Fetcher {
         }
 
         // couldn't find and not allowed to download
-        Err(format_err!("Could not fetch"))
+        bail!("Could not fetch")
     }
 
     // Look for an installation directory matching self.options.revision
-    fn base_path(&self) -> Fallible<PathBuf> {
+    fn base_path(&self) -> Result<PathBuf> {
         // we want to look in install_dir first, then data dir
         let mut search_dirs: Vec<&Path> = Vec::new();
         let project_dirs = get_project_dirs()?;
@@ -132,7 +132,7 @@ impl Fetcher {
                 let filename_parts = entry
                     .file_name()
                     .to_str()
-                    .ok_or_else(|| format_err!("Failed conversion to UTF-8"))?
+                    .context("Failed conversion to UTF-8")?
                     .split('-')
                     .collect::<Vec<_>>();
 
@@ -145,11 +145,11 @@ impl Fetcher {
             }
         }
 
-        Err(format_err!("Could not find an existing revision"))
+        bail!("Could not find an existing revision")
     }
 
     // find full path to chrome executable from base_path
-    fn chrome_path(&self) -> Fallible<PathBuf> {
+    fn chrome_path(&self) -> Result<PathBuf> {
         let mut path = self.base_path()?;
         path.push(archive_name(&self.options.revision)?);
 
@@ -173,7 +173,7 @@ impl Fetcher {
     }
 
     // download a .zip of the revision we want
-    fn download(&self) -> Fallible<PathBuf> {
+    fn download(&self) -> Result<PathBuf> {
         let url = dl_url(&self.options.revision)?;
         info!("Chrome download url: {}", url);
         let total = get_size(&url)?;
@@ -190,15 +190,14 @@ impl Fetcher {
         } else {
             // No preferred install dir and not allowed to use standard dirs.
             // Not likely for someone to try and do this on purpose.
-            return Err(format_err!("No allowed installation directory"));
+            bail!("No allowed installation directory");
         };
         path = path.with_extension("zip");
         // we need to create this directory in case it doesn't exist yet
-        fs::create_dir_all(
-            path.parent()
-                .ok_or_else(|| format_err!("Path {:?} does not have a parent directory", path))?,
-        )
-        .map_err(|_err| format_err!("Could not create directory at {:?}", path.parent()))?;
+        fs::create_dir_all(path.parent().with_context(|| {
+            format!("Path {} does not have a parent directory", path.display())
+        })?)
+        .with_context(|| format!("Could not create directory at {:?}", path.parent()))?;
 
         println!("{:?}", path);
 
@@ -212,19 +211,19 @@ impl Fetcher {
     }
 
     // unzip the downloaded file and do all the needed file manipulation
-    fn unzip<P: AsRef<Path>>(&self, zip_path: P) -> Fallible<PathBuf> {
+    fn unzip<P: AsRef<Path>>(&self, zip_path: P) -> Result<PathBuf> {
         let mut archive = zip::ZipArchive::new(File::open(zip_path.as_ref())?)?;
 
         let mut extract_path: PathBuf = zip_path
             .as_ref()
             .parent()
-            .ok_or_else(|| format_err!("zip_path does not have a parent directory"))?
+            .context("zip_path does not have a parent directory")?
             .to_path_buf();
 
         let folder_name = zip_path
             .as_ref()
             .file_stem()
-            .ok_or_else(|| format_err!("zip_path does not have a file stem"))?;
+            .context("zip_path does not have a file stem")?;
 
         extract_path.push(folder_name);
 
@@ -240,7 +239,7 @@ impl Fetcher {
             let mut out_path = extract_path.clone();
             out_path.push(
                 file.enclosed_name()
-                    .ok_or_else(|| format_err!("zip file contains invalid path"))?,
+                    .context("zip file contains invalid path")?,
             );
 
             let comment = file.comment();
@@ -291,23 +290,20 @@ impl Fetcher {
     }
 }
 
-fn get_size<U: AsRef<str>>(url: U) -> Fallible<u64> {
+fn get_size<U: AsRef<str>>(url: U) -> Result<u64> {
     let resp = ureq::get(url.as_ref()).call();
     match resp.header("Content-Length") {
         Some(len) => Ok(u64::from_str(len)? / 2_u64.pow(20)),
-        None => Err(format_err!("response doesn't include the content length")),
+        None => bail!("response doesn't include the content length"),
     }
 }
 
-fn get_project_dirs() -> Fallible<ProjectDirs> {
+fn get_project_dirs() -> Result<ProjectDirs> {
     info!("Getting project dir");
-    match ProjectDirs::from("", "", APP_NAME) {
-        Some(dirs) => Ok(dirs),
-        None => Err(format_err!("Failed to retrieve project dirs")),
-    }
+    ProjectDirs::from("", "", APP_NAME).context("Failed to retrieve project dirs")
 }
 
-fn dl_url<R>(revision: R) -> Fallible<String>
+fn dl_url<R>(revision: R) -> Result<String>
 where
     R: AsRef<str>,
 {
@@ -342,7 +338,7 @@ where
     }
 }
 
-fn archive_name<R: AsRef<str>>(revision: R) -> Fallible<&'static str> {
+fn archive_name<R: AsRef<str>>(revision: R) -> Result<&'static str> {
     #[cfg(target_os = "linux")]
     {
         drop(revision);

@@ -1,6 +1,6 @@
 use std::fs::File;
 
-use failure::Fallible;
+use anyhow::Result;
 use filepath::FilePath;
 use regex::Regex;
 
@@ -11,7 +11,7 @@ pub mod logging;
 mod server;
 
 #[test]
-fn file_chooser_works() -> Fallible<()> {
+fn file_chooser_works() -> Result<()> {
     logging::enable_logging();
     let browser = Browser::default()?;
     let version = browser.get_version()?;

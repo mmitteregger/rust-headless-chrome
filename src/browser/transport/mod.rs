@@ -7,9 +7,10 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use failure::{Fail, Fallible};
+use anyhow::Result;
 use log::*;
 use serde;
+use thiserror::Error;
 
 use waiting_call_registry::WaitingCallRegistry;
 use web_socket_connection::WebSocketConnection;
@@ -61,8 +62,8 @@ pub struct Transport {
     loop_shutdown_tx: Mutex<mpsc::Sender<()>>,
 }
 
-#[derive(Debug, Fail)]
-#[fail(display = "Unable to make method calls because underlying connection is closed")]
+#[derive(Debug, Error)]
+#[error("Unable to make method calls because underlying connection is closed")]
 pub struct ConnectionClosed {}
 
 impl Transport {
@@ -70,7 +71,7 @@ impl Transport {
         ws_url: String,
         process_id: Option<u32>,
         idle_browser_timeout: Duration,
-    ) -> Fallible<Self> {
+    ) -> Result<Self> {
         let (messages_tx, messages_rx) = mpsc::channel();
         let web_socket_connection =
             Arc::new(WebSocketConnection::new(&ws_url, process_id, messages_tx)?);
@@ -116,7 +117,7 @@ impl Transport {
         &self,
         method: C,
         destination: MethodDestination,
-    ) -> Fallible<C::ReturnObject>
+    ) -> Result<C::ReturnObject>
     where
         C: protocol::Method + serde::Serialize,
     {
@@ -176,7 +177,7 @@ impl Transport {
         &self,
         session_id: SessionId,
         method: C,
-    ) -> Fallible<C::ReturnObject>
+    ) -> Result<C::ReturnObject>
     where
         C: protocol::Method + serde::Serialize,
     {
@@ -184,7 +185,7 @@ impl Transport {
         self.call_method(method, MethodDestination::Target(session_id))
     }
 
-    pub fn call_method_on_browser<C>(&self, method: C) -> Fallible<C::ReturnObject>
+    pub fn call_method_on_browser<C>(&self, method: C) -> Result<C::ReturnObject>
     where
         C: protocol::Method + serde::Serialize,
     {

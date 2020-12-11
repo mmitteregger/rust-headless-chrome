@@ -4,8 +4,8 @@ use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
+use anyhow::Result;
 use base64;
-use failure::Fallible;
 use log::*;
 use rand::prelude::*;
 
@@ -48,7 +48,7 @@ fn dumb_client(server: &server::Server) -> (Browser, Arc<Tab>) {
 }
 
 #[test]
-fn simple() -> Fallible<()> {
+fn simple() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
     tab.wait_for_element("div#foobar")?;
@@ -58,7 +58,7 @@ fn simple() -> Fallible<()> {
 // NOTE: we disable this test for Mac, because Travis doesn't support xvfb as a 'service'
 #[cfg(target_os = "linux")]
 #[test]
-fn bounds_changed() -> Result<(), failure::Error> {
+fn bounds_changed() -> Result<()> {
     logging::enable_logging();
     let browser = browser();
     let tab = browser.wait_for_initial_tab().unwrap();
@@ -97,7 +97,7 @@ fn bounds_changed() -> Result<(), failure::Error> {
 }
 
 #[test]
-fn bounds_unchanged() -> Result<(), failure::Error> {
+fn bounds_unchanged() -> Result<()> {
     logging::enable_logging();
     let browser = browser();
     let tab = browser.wait_for_initial_tab().unwrap();
@@ -134,7 +134,7 @@ fn bounds_unchanged() -> Result<(), failure::Error> {
 }
 
 #[test]
-fn actions_on_tab_wont_hang_after_browser_drops() -> Fallible<()> {
+fn actions_on_tab_wont_hang_after_browser_drops() -> Result<()> {
     logging::enable_logging();
     for _ in 0..20 {
         let (_, browser, tab) = dumb_server(include_str!("simple.html"));
@@ -151,7 +151,7 @@ fn actions_on_tab_wont_hang_after_browser_drops() -> Fallible<()> {
 }
 
 #[test]
-fn form_interaction() -> Fallible<()> {
+fn form_interaction() -> Result<()> {
     logging::enable_logging();
     let (_, browser, tab) = dumb_server(include_str!("form.html"));
     tab.wait_for_element("input#target")?
@@ -170,7 +170,7 @@ fn form_interaction() -> Fallible<()> {
     Ok(())
 }
 
-fn decode_png(i: &[u8]) -> Fallible<Vec<u8>> {
+fn decode_png(i: &[u8]) -> Result<Vec<u8>> {
     let decoder = png::Decoder::new(&i[..]);
     let (info, mut reader) = decoder.read_info()?;
     let mut buf = vec![0; info.buffer_size()];
@@ -190,7 +190,7 @@ fn sum_of_errors(inp: &[u8], fixture: &[u8]) -> u32 {
 }
 
 #[test]
-fn capture_screenshot_png() -> Fallible<()> {
+fn capture_screenshot_png() -> Result<()> {
     logging::enable_logging();
     let (_, browser, tab) = dumb_server(include_str!("simple.html"));
     tab.wait_for_element("div#foobar")?;
@@ -202,7 +202,7 @@ fn capture_screenshot_png() -> Fallible<()> {
 }
 
 #[test]
-fn capture_screenshot_element() -> Fallible<()> {
+fn capture_screenshot_element() -> Result<()> {
     logging::enable_logging();
     let (_, browser, tab) = dumb_server(include_str!("simple.html"));
     // Check that the screenshot of the div's content-box has no other color than the one set in simple.html
@@ -217,7 +217,7 @@ fn capture_screenshot_element() -> Fallible<()> {
 }
 
 #[test]
-fn capture_screenshot_element_box() -> Fallible<()> {
+fn capture_screenshot_element_box() -> Result<()> {
     logging::enable_logging();
     let (_, browser, tab) = dumb_server(include_str!("simple.html"));
     // Check that the top-left pixel of the div's border-box has the border's color set in simple.html
@@ -230,7 +230,7 @@ fn capture_screenshot_element_box() -> Fallible<()> {
 }
 
 #[test]
-fn capture_screenshot_jpeg() -> Fallible<()> {
+fn capture_screenshot_jpeg() -> Result<()> {
     logging::enable_logging();
     let (_, browser, tab) = dumb_server(include_str!("simple.html"));
     tab.wait_for_element("div#foobar")?;
@@ -242,7 +242,7 @@ fn capture_screenshot_jpeg() -> Fallible<()> {
 }
 
 #[test]
-fn test_print_file_to_pdf() -> Fallible<()> {
+fn test_print_file_to_pdf() -> Result<()> {
     logging::enable_logging();
     let (_, browser, tab) = dumb_server(include_str!("./pdfassets/index.html"));
     let local_pdf = tab.wait_until_navigated()?.print_to_pdf(None)?;
@@ -252,7 +252,7 @@ fn test_print_file_to_pdf() -> Fallible<()> {
 }
 
 #[test]
-fn get_box_model() -> Fallible<()> {
+fn get_box_model() -> Result<()> {
     logging::enable_logging();
     let (_, browser, tab) = dumb_server(include_str!("simple.html"));
     let pox = tab.wait_for_element("div#foobar")?.get_box_model()?;
@@ -263,7 +263,7 @@ fn get_box_model() -> Fallible<()> {
 }
 
 #[test]
-fn box_model_geometry() -> Fallible<()> {
+fn box_model_geometry() -> Result<()> {
     logging::enable_logging();
     let (_, browser, tab) = dumb_server(include_str!("simple.html"));
     let center = tab.wait_for_element("div#position-test")?.get_box_model()?;
@@ -310,7 +310,7 @@ fn box_model_geometry() -> Fallible<()> {
 }
 
 #[test]
-fn reload() -> Fallible<()> {
+fn reload() -> Result<()> {
     logging::enable_logging();
     let mut counter = 0;
     let responder = move |r: tiny_http::Request| {
@@ -343,7 +343,7 @@ fn reload() -> Fallible<()> {
 }
 
 #[test]
-fn find_elements() -> Fallible<()> {
+fn find_elements() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
     let divs = tab.wait_for_elements("div")?;
@@ -352,7 +352,7 @@ fn find_elements() -> Fallible<()> {
 }
 
 #[test]
-fn find_element_on_tab_and_other_elements() -> Fallible<()> {
+fn find_element_on_tab_and_other_elements() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
     let containing_element = tab.find_element("div#position-test")?;
@@ -364,7 +364,7 @@ fn find_element_on_tab_and_other_elements() -> Fallible<()> {
 }
 
 #[test]
-fn set_user_agent() -> Fallible<()> {
+fn set_user_agent() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(
         r#"
@@ -392,7 +392,7 @@ document.write(navigator.userAgent + ";" + navigator.platform + ";" + navigator.
 }
 
 #[test]
-fn wait_for_element_returns_unexpected_errors_early() -> Fallible<()> {
+fn wait_for_element_returns_unexpected_errors_early() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
     let start = Instant::now();
@@ -406,7 +406,7 @@ fn wait_for_element_returns_unexpected_errors_early() -> Fallible<()> {
 }
 
 #[test]
-fn call_js_fn_sync() -> Fallible<()> {
+fn call_js_fn_sync() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
     let element = tab.wait_for_element("#foobar")?;
@@ -418,7 +418,7 @@ fn call_js_fn_sync() -> Fallible<()> {
 }
 
 #[test]
-fn call_js_fn_async_unresolved() -> Fallible<()> {
+fn call_js_fn_async_unresolved() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
     let element = tab.wait_for_element("#foobar")?;
@@ -431,7 +431,7 @@ fn call_js_fn_async_unresolved() -> Fallible<()> {
 }
 
 #[test]
-fn call_js_fn_async_resolved() -> Fallible<()> {
+fn call_js_fn_async_resolved() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
     let element = tab.wait_for_element("#foobar")?;
@@ -444,7 +444,7 @@ fn call_js_fn_async_resolved() -> Fallible<()> {
 }
 
 #[test]
-fn evaluate_sync() -> Fallible<()> {
+fn evaluate_sync() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
     let result = tab.evaluate("(function () { return 42 })();", false)?;
@@ -455,7 +455,7 @@ fn evaluate_sync() -> Fallible<()> {
 }
 
 #[test]
-fn evaluate_async_unresolved() -> Fallible<()> {
+fn evaluate_async_unresolved() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
     let result = tab.evaluate("(async function () { return 42 })();", false)?;
@@ -467,7 +467,7 @@ fn evaluate_async_unresolved() -> Fallible<()> {
 }
 
 #[test]
-fn evaluate_async_resolved() -> Fallible<()> {
+fn evaluate_async_resolved() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
     let result = tab.evaluate("(async function () { return 42 })();", true)?;
@@ -479,7 +479,7 @@ fn evaluate_async_resolved() -> Fallible<()> {
 }
 
 #[test]
-fn set_request_interception() -> Fallible<()> {
+fn set_request_interception() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(include_str!(
         "coverage_fixtures/basic_page_with_js_scripts.html"
@@ -542,7 +542,7 @@ fn set_request_interception() -> Fallible<()> {
 }
 
 #[test]
-fn response_handler() -> Fallible<()> {
+fn response_handler() -> Result<()> {
     logging::enable_logging();
     let server = server::Server::with_dumb_html(include_str!(
         "coverage_fixtures/basic_page_with_js_scripts.html"
@@ -578,7 +578,7 @@ fn response_handler() -> Fallible<()> {
 }
 
 #[test]
-fn incognito_contexts() -> Fallible<()> {
+fn incognito_contexts() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
 
@@ -595,7 +595,7 @@ fn incognito_contexts() -> Fallible<()> {
 }
 
 #[test]
-fn get_script_source() -> Fallible<()> {
+fn get_script_source() -> Result<()> {
     logging::enable_logging();
     let server = server::file_server("tests/coverage_fixtures");
     let browser = Browser::default()?;
@@ -634,7 +634,7 @@ fn get_script_source() -> Fallible<()> {
 }
 
 #[test]
-fn get_cookies() -> Fallible<()> {
+fn get_cookies() -> Result<()> {
     logging::enable_logging();
     let responder = move |r: tiny_http::Request| {
         let response = tiny_http::Response::new(
@@ -670,7 +670,7 @@ fn get_cookies() -> Fallible<()> {
 }
 
 #[test]
-fn close_tabs() -> Fallible<()> {
+fn close_tabs() -> Result<()> {
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
     let tabs = browser.get_tabs();
 
@@ -719,7 +719,7 @@ fn close_tabs() -> Fallible<()> {
 }
 
 #[test]
-fn parses_shadow_doms() -> Fallible<()> {
+fn parses_shadow_doms() -> Result<()> {
     logging::enable_logging();
     let (_, browser, tab) = dumb_server(include_str!("shadow-dom.html"));
     tab.wait_for_element("html")?;

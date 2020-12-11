@@ -3,10 +3,11 @@
 use std::fmt::Debug;
 
 use crate::protocol::types::{JsInt, JsUInt};
-use failure::{Fail, Fallible};
+use anyhow::Result;
 use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use thiserror::Error;
 
 pub mod browser;
 pub mod debugger;
@@ -64,8 +65,8 @@ pub trait Method: Debug {
     }
 }
 
-#[derive(Deserialize, Debug, PartialEq, Clone, Fail)]
-#[fail(display = "Method call error {}: {}", code, message)]
+#[derive(Deserialize, Debug, PartialEq, Clone, Error)]
+#[error("Method call error {code}: {message}")]
 pub struct RemoteError {
     pub code: JsInt,
     pub message: String,
@@ -79,7 +80,7 @@ pub struct Response {
     pub error: Option<RemoteError>,
 }
 
-pub fn parse_response<T>(response: Response) -> Fallible<T>
+pub fn parse_response<T>(response: Response) -> Result<T>
 where
     T: serde::de::DeserializeOwned + std::fmt::Debug,
 {
@@ -226,6 +227,6 @@ mod tests {
     }
 }
 
-pub fn parse_raw_message(raw_message: &str) -> Fallible<Message> {
+pub fn parse_raw_message(raw_message: &str) -> Result<Message> {
     Ok(serde_json::from_str::<Message>(raw_message)?)
 }
