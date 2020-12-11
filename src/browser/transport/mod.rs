@@ -126,7 +126,7 @@ impl Transport {
             return Err(ConnectionClosed {}.into());
         }
         let call_id = self.unique_call_id();
-        let call = method.to_method_call(call_id);
+        let call = method.into_method_call(call_id);
 
         let message_text = serde_json::to_string(&call)?;
 

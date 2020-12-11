@@ -51,9 +51,7 @@ pub trait Method: Debug {
 
     type ReturnObject: serde::de::DeserializeOwned + std::fmt::Debug; // have this = something?
 
-    // TODO: Rust IntelliJ says that to_* method calls "usuall take self by reference"
-    //       Maybe that'd be better here?
-    fn to_method_call(self, call_id: CallId) -> MethodCall<Self>
+    fn into_method_call(self, call_id: CallId) -> MethodCall<Self>
     where
         Self: std::marker::Sized,
     {
