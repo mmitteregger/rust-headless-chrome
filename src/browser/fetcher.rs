@@ -5,7 +5,7 @@ use std::{
     str::FromStr,
 };
 
-use directories::ProjectDirs;
+use directories_next::ProjectDirs;
 use failure::{format_err, Fallible};
 use log::*;
 use ureq;
@@ -31,7 +31,7 @@ pub struct FetcherOptions {
     /// defaults to CUR_REV
     revision: String,
 
-    /// The prefered installation directory. If not None we will look here first
+    /// The preferred installation directory. If not None we will look here first
     /// for existing installs.
     ///
     /// defaults to None
