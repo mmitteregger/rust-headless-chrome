@@ -208,6 +208,19 @@ pub mod methods {
 
     #[derive(Serialize, Debug)]
     #[serde(rename_all = "camelCase")]
+    pub struct Disable {}
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct DisableReturnObject {}
+
+    impl Method for Disable {
+        const NAME: &'static str = "Network.disable";
+        type ReturnObject = DisableReturnObject;
+    }
+
+    #[derive(Serialize, Debug)]
+    #[serde(rename_all = "camelCase")]
     pub struct RequestPattern<'a> {
         /// Wildcards ('*' -> zero or more, '?' -> exactly one) are allowed.
         /// Escape character is backslash. Omitting is equivalent to "*".

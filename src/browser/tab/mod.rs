@@ -796,9 +796,22 @@ impl<'a> Tab {
     /// Currently you can only have one handler registered, but ideally there would be no limit and
     /// we'd give you a mechanism to deregister the handler too.
     pub fn enable_response_handling(&self, handler: ResponseHandler) -> Result<()> {
-        self.call_method(network::methods::Enable {})?;
+        self.enable_network()?;
         *(self.response_handler.lock().unwrap()) = Some(handler);
         Ok(())
+    }
+
+    /// Enables Network
+    pub fn enable_network(&self) -> Result<&Self> {
+        self.call_method(protocol::network::methods::Enable {})?;
+        Ok(self)
+    }
+
+    /// Disables Network
+    pub fn disable_network(&self) -> Result<&Self> {
+        *(self.response_handler.lock().unwrap()) = None;
+        self.call_method(protocol::network::methods::Disable {})?;
+        Ok(self)
     }
 
     /// Enables runtime domain.
