@@ -238,7 +238,10 @@ impl Fetcher {
         for i in 0..archive.len() {
             let mut file = archive.by_index(i)?;
             let mut out_path = extract_path.clone();
-            out_path.push(file.sanitized_name().as_path());
+            out_path.push(
+                file.enclosed_name()
+                    .ok_or_else(|| format_err!("zip file contains invalid path"))?,
+            );
 
             let comment = file.comment();
             if !comment.is_empty() {
