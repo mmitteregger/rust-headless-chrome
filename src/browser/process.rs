@@ -61,7 +61,7 @@ impl Drop for TemporaryProcess {
 /// binary on the system, use an available port for debugging, and start in headless mode.
 #[derive(Builder)]
 pub struct LaunchOptions<'a> {
-    /// Determintes whether to run headless version of the browser. Defaults to true.
+    /// Determines whether to run headless version of the browser. Defaults to true.
     #[builder(default = "true")]
     headless: bool,
 
@@ -108,7 +108,7 @@ pub struct LaunchOptions<'a> {
     fetcher_options: FetcherOptions,
 
     /// How long to keep the WebSocket to the browser for after not receiving any events from it
-    /// Defaults to 30 seconds
+    /// Defaults to 300 seconds
     #[builder(default = "Duration::from_secs(300)")]
     pub idle_browser_timeout: Duration,
 
