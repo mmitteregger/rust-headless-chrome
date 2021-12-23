@@ -16,9 +16,10 @@
 //! # Quick Start
 //!
 //! ```no_run
+//! use anyhow::Result;
 //! use headless_chrome::{Browser, protocol::page::ScreenshotFormat};
 //!
-//! fn browse_wikipedia() -> Result<(), failure::Error> {
+//! fn browse_wikipedia() -> Result<()> {
 //!     let browser = Browser::default()?;
 //!
 //!     let tab = browser.wait_for_initial_tab()?;

@@ -279,8 +279,8 @@ impl<'a> Element<'a> {
     /// ## Example
     ///
     /// ```rust
-    /// # use failure::Fallible;
-    /// # fn main() -> Fallible<()> {
+    /// # use anyhow::Result;
+    /// # fn main() -> Result<()> {
     /// #
     /// use headless_chrome::Browser;
     /// use std::time::Duration;
@@ -301,14 +301,14 @@ impl<'a> Element<'a> {
     ///
     ///     this.id = 'changed-the-id';
     ///   }
-    /// #", false)?;
+    /// "#, Vec::new(), false)?;
     ///
     /// let elem = tab.wait_for_element("#changed-the-id")?;
     /// let remote_object = elem.call_js_fn(r#"
     ///     async asyncFnExample function () {
     ///         return 500;
     ///     }
-    /// "#, true)?;
+    /// "#, Vec::new(), true)?;
     ///
     /// match remote_object.value.unwrap() {
     ///    serde_json::value::Value::Number(num) => {

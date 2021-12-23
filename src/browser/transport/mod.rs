@@ -11,9 +11,9 @@ use anyhow::Result;
 use log::*;
 use thiserror::Error;
 
+use url::Url;
 use waiting_call_registry::WaitingCallRegistry;
 use web_socket_connection::WebSocketConnection;
-use websocket::url::Url;
 
 use crate::protocol::target;
 use crate::protocol::CallId;
@@ -150,7 +150,7 @@ impl Transport {
                 }
             }
             MethodDestination::Browser => {
-                if let Err(e) = self.web_socket_connection.send_message(&message_text) {
+                if let Err(e) = self.web_socket_connection.send_message(message_text) {
                     self.waiting_call_registry.unregister_call(call.id);
                     return Err(e);
                 }

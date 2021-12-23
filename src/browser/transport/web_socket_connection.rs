@@ -1,26 +1,22 @@
-use std::sync::mpsc;
+use std::io;
+use std::net::TcpStream;
+use std::sync::mpsc::{self, TryRecvError};
 use std::sync::Mutex;
+use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use log::*;
-use websocket::client::sync::Client;
-use websocket::stream::sync::TcpStream;
-use websocket::url::Url;
-use websocket::WebSocketError;
-use websocket::{ClientBuilder, OwnedMessage};
+use tungstenite::stream::MaybeTlsStream;
+use tungstenite::WebSocket;
+use url::Url;
 
 use crate::protocol;
 
+#[derive(Debug)]
 pub struct WebSocketConnection {
-    sender: Mutex<websocket::sender::Writer<TcpStream>>,
+    send_tx: Mutex<Option<mpsc::SyncSender<String>>>,
     process_id: Option<u32>,
-}
-
-// TODO websocket::sender::Writer is not :Debug...
-impl std::fmt::Debug for WebSocketConnection {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
-        write!(f, "WebSocketConnection {{}}")
-    }
+    thread_handle: Option<std::thread::JoinHandle<()>>,
 }
 
 impl WebSocketConnection {
@@ -29,71 +25,146 @@ impl WebSocketConnection {
         process_id: Option<u32>,
         messages_tx: mpsc::Sender<protocol::Message>,
     ) -> Result<Self> {
-        let connection = Self::websocket_connection(&ws_url)?;
-        let (websocket_receiver, sender) = connection.split()?;
+        let web_socket = Self::websocket_connection(ws_url)?;
+        let (send_tx, send_rx) = mpsc::sync_channel(4);
 
-        std::thread::spawn(move || {
-            trace!("Starting msg dispatching loop");
-            Self::dispatch_incoming_messages(websocket_receiver, messages_tx, process_id);
-            trace!("Quit loop msg dispatching loop");
-        });
+        let thread_handle = std::thread::Builder::new()
+            .name(format!("ws-{}", process_id.unwrap_or(0)))
+            .spawn(move || {
+                trace!("Starting msg dispatching loop");
+                Self::dispatch_incoming_messages(web_socket, send_rx, messages_tx, process_id);
+                trace!("Quit loop msg dispatching loop");
+            })
+            .expect("failed to spawn thread");
 
         Ok(Self {
-            sender: Mutex::new(sender),
+            send_tx: Mutex::new(Some(send_tx)),
             process_id,
+            thread_handle: Some(thread_handle),
         })
     }
 
-    pub fn shutdown(&self) {
-        trace!(
-            "Shutting down WebSocket connection for Chrome {:?}",
-            self.process_id
-        );
-        if self.sender.lock().unwrap().shutdown_all().is_err() {
-            debug!(
-                "Couldn't shut down WS connection for Chrome {:?}",
-                self.process_id
-            );
+    fn websocket_connection(ws_url: &Url) -> Result<WebSocket<MaybeTlsStream<TcpStream>>> {
+        let (mut web_socket, _response) = tungstenite::connect(ws_url)?;
+        match web_socket.get_mut() {
+            MaybeTlsStream::Plain(tcp_stream) => {
+                tcp_stream.set_nonblocking(true)?;
+            }
+            _ => unimplemented!(),
         }
+        debug!("Successfully connected to WebSocket: {}", ws_url);
+        Ok(web_socket)
     }
 
     fn dispatch_incoming_messages(
-        mut receiver: websocket::receiver::Reader<TcpStream>,
+        mut socket: WebSocket<MaybeTlsStream<TcpStream>>,
+        send_rx: mpsc::Receiver<String>,
         messages_tx: mpsc::Sender<protocol::Message>,
         process_id: Option<u32>,
     ) {
-        for ws_message in receiver.incoming_messages() {
-            match ws_message {
+        let min_sleep = Duration::from_millis(0);
+        let max_sleep = Duration::from_millis(100);
+        let sleep_increment = Duration::from_millis(5);
+        let mut sleep_duration = min_sleep;
+
+        loop {
+            match send_rx.try_recv() {
+                Ok(message_text) => {
+                    sleep_duration = min_sleep;
+                    let dispatch_result = Self::dispatch_message(
+                        &mut socket,
+                        tungstenite::Message::Text(message_text),
+                    );
+                    match dispatch_result {
+                        Ok(()) => continue,
+                        Err(error) => match error {
+                            tungstenite::Error::ConnectionClosed => break,
+                            tungstenite::Error::Io(io_error) => {
+                                debug!("WS IO Error for Chrome #{:?}: {}", process_id, io_error);
+                                break;
+                            }
+                            _ => panic!(
+                                "Unhandled WebSocket error for Chrome #{:?}: {:?}",
+                                process_id, error
+                            ),
+                        },
+                    }
+                }
+                Err(try_recv_error) => match try_recv_error {
+                    TryRecvError::Empty => {}
+                    TryRecvError::Disconnected => {
+                        debug!("Closing WebSocket connection for Chrome {:?}", process_id);
+                        match socket.close(None) {
+                            Ok(()) => {}
+                            Err(error) => match error {
+                                tungstenite::Error::ConnectionClosed => break,
+                                tungstenite::Error::Io(io_error) => match io_error.kind() {
+                                    io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted => {
+                                        std::thread::sleep(sleep_duration);
+                                        sleep_duration += sleep_increment;
+                                        if sleep_duration > max_sleep {
+                                            sleep_duration = max_sleep;
+                                        }
+                                    }
+                                    _ => {
+                                        debug!(
+                                            "WS IO Error for Chrome #{:?}: {}",
+                                            process_id, io_error
+                                        );
+                                        break;
+                                    }
+                                },
+                                _ => panic!(
+                                    "Unhandled WebSocket error for Chrome #{:?}: {:?}",
+                                    process_id, error
+                                ),
+                            },
+                        }
+                    }
+                },
+            }
+
+            match socket.read_message() {
+                Ok(message) => {
+                    sleep_duration = min_sleep;
+
+                    match message {
+                        tungstenite::Message::Text(message_text) => {
+                            match protocol::parse_raw_message(&message_text) {
+                                Ok(message) => {
+                                    if messages_tx.send(message).is_err() {
+                                        break;
+                                    }
+                                }
+                                Err(_error) => {
+                                    trace!("Incoming message isn't recognised as event or method response: {}", message_text);
+                                }
+                            }
+                        }
+                        tungstenite::Message::Close(_) => {}
+                        _ => panic!("Got a weird message: {:?}", message),
+                    }
+                }
                 Err(error) => match error {
-                    WebSocketError::NoDataAvailable => {
-                        debug!("WS Error Chrome #{:?}: {}", process_id, error);
-                        break;
-                    }
-                    WebSocketError::IoError(err) => {
-                        debug!("WS IO Error for Chrome #{:?}: {}", process_id, err);
-                        break;
-                    }
+                    tungstenite::Error::ConnectionClosed => break,
+                    tungstenite::Error::Io(io_error) => match io_error.kind() {
+                        io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted => {
+                            std::thread::sleep(sleep_duration);
+                            sleep_duration += sleep_increment;
+                            if sleep_duration > max_sleep {
+                                sleep_duration = max_sleep;
+                            }
+                        }
+                        _ => {
+                            debug!("WS IO Error for Chrome #{:?}: {}", process_id, io_error);
+                            break;
+                        }
+                    },
                     _ => panic!(
                         "Unhandled WebSocket error for Chrome #{:?}: {:?}",
                         process_id, error
                     ),
                 },
-                Ok(message) => {
-                    if let OwnedMessage::Text(message_string) = message {
-                        if let Ok(message) = protocol::parse_raw_message(&message_string) {
-                            if messages_tx.send(message).is_err() {
-                                break;
-                            }
-                        } else {
-                            trace!(
-                                "Incoming message isn't recognised as event or method response: {}",
-                                message_string
-                            );
-                        }
-                    } else {
-                        panic!("Got a weird message: {:?}", message)
-                    }
-                }
             }
         }
 
@@ -106,24 +177,74 @@ impl WebSocketConnection {
         }
     }
 
-    pub fn websocket_connection(ws_url: &Url) -> Result<Client<TcpStream>> {
-        let client = ClientBuilder::from_url(ws_url).connect_insecure()?;
+    fn dispatch_message(
+        socket: &mut WebSocket<MaybeTlsStream<TcpStream>>,
+        message: tungstenite::Message,
+    ) -> tungstenite::Result<()> {
+        trace!("dispatching message: {:?}", message);
 
-        debug!("Successfully connected to WebSocket: {}", ws_url);
+        let min_sleep = Duration::from_millis(0);
+        let max_sleep = Duration::from_secs(1);
+        let sleep_increment = Duration::from_millis(5);
+        let mut sleep_duration = min_sleep;
 
-        Ok(client)
+        loop {
+            match socket.write_message(message.clone()) {
+                Ok(()) => break,
+                Err(error) => match error {
+                    tungstenite::Error::Io(io_error) => match io_error.kind() {
+                        io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted => {
+                            std::thread::sleep(sleep_duration);
+                            sleep_duration += sleep_increment;
+                            if sleep_duration > max_sleep {
+                                sleep_duration = max_sleep;
+                            }
+                        }
+                        _ => return Err(tungstenite::Error::Io(io_error)),
+                    },
+                    tungstenite::Error::SendQueueFull(_message) => {
+                        debug!("send queue is full, retrying...");
+                        socket.write_pending()?;
+                    }
+                    _ => return Err(error),
+                },
+            }
+        }
+
+        socket.write_pending()?;
+        Ok(())
     }
 
-    pub fn send_message(&self, message_text: &str) -> Result<()> {
-        let message = websocket::Message::text(message_text);
-        let mut sender = self.sender.lock().unwrap();
-        sender.send_message(&message)?;
+    pub fn send_message(&self, message_text: String) -> Result<()> {
+        match self.send_tx.lock().unwrap().as_mut() {
+            Some(send_tx) => send_tx.send(message_text)?,
+            None => bail!(
+                "WS connection for Chrome #{:?} was already shut down",
+                self.process_id
+            ),
+        }
         Ok(())
+    }
+
+    pub fn shutdown(&self) {
+        trace!(
+            "Shutting down WebSocket connection for Chrome {:?}",
+            self.process_id
+        );
+        match self.send_tx.lock().unwrap().take() {
+            Some(send_tx) => drop(send_tx),
+            None => trace!(
+                "WS connection for Chrome #{:?} was already shut down",
+                self.process_id
+            ),
+        }
     }
 }
 
 impl Drop for WebSocketConnection {
     fn drop(&mut self) {
         info!("dropping websocket connection");
+        self.shutdown();
+        let _ = self.thread_handle.take().unwrap().join();
     }
 }

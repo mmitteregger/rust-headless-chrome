@@ -889,8 +889,8 @@ impl Tab {
     /// Useful when you want capture a .png
     ///
     /// ```rust,no_run
-    /// # use failure::Fallible;
-    /// # fn main() -> Fallible<()> {
+    /// # use anyhow::Result;
+    /// # fn main() -> Result<()> {
     /// #
     /// use headless_chrome::{protocol::page::ScreenshotFormat, Browser, LaunchOptions};
     /// let browser = Browser::new(LaunchOptions::default_builder().build().unwrap())?;
@@ -918,14 +918,14 @@ impl Tab {
     /// Pass a RGBA to override the backrgound color of the dom.
     ///
     /// ```rust,no_run
-    /// # use failure::Fallible;
-    /// # fn main() -> Fallible<()> {
+    /// # use anyhow::Result;
+    /// # fn main() -> Result<()> {
     /// #
     /// use headless_chrome::{protocol::page::ScreenshotFormat, Browser, LaunchOptions};
+    /// use headless_chrome::protocol::dom::RGBA;
     /// let browser = Browser::new(LaunchOptions::default_builder().build().unwrap())?;
     /// let tab = browser.wait_for_initial_tab()?;
-    /// tab.set_background_color( color: RGBA { r: 255, g: 0, b: 0, a: 1.,})?;
-    ///
+    /// tab.set_background_color(RGBA { r: 255, g: 0, b: 0, a: 1.,})?;
     /// #
     /// # Ok(())
     /// # }
