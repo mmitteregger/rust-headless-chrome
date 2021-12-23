@@ -59,6 +59,14 @@ pub enum CookieSameSite {
     None,
 }
 
+/// https://chromedevtools.github.io/devtools-protocol/tot/Network/#type-CookiePriority
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum CookiePriority {
+    Low,
+    Medium,
+    High,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Cookie {
@@ -72,6 +80,49 @@ pub struct Cookie {
     pub secure: bool,
     pub session: bool,
     pub same_site: Option<CookieSameSite>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CookieParam {
+    pub name: String,
+    pub value: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secure: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub http_only: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub same_site: Option<CookieSameSite>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires: Option<JsFloat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<JsUInt>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub priority: Option<CookiePriority>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub enum ErrorReason {
+    Failed,
+    Aborted,
+    TimedOut,
+    AccessDenied,
+    ConnectionClosed,
+    ConnectionReset,
+    ConnectionRefused,
+    ConnectionAborted,
+    ConnectionFailed,
+    NameNotResolved,
+    InternetDisconnected,
+    AddressUnreachable,
+    BlockedByClient,
+    BlockedByResponse,
 }
 
 pub mod events {
@@ -152,6 +203,21 @@ pub mod events {
         pub params: ResponseReceivedEventParams,
     }
 
+    #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    pub struct LoadingFinishedEventParams {
+        pub request_id: String,
+        pub timestamp: JsFloat,
+        pub encoded_data_length: JsInt,
+        pub should_report_corb_blocking: bool,
+    }
+
+    #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    pub struct LoadingFinishedEvent {
+        pub params: LoadingFinishedEventParams,
+    }
+
     #[test]
     fn can_parse_request_intercepted_event() {
         use crate::protocol;
@@ -186,12 +252,12 @@ pub mod events {
 }
 
 pub mod methods {
-    use std::collections::HashMap;
-
     use serde::{Deserialize, Serialize};
 
-    use crate::protocol::network::Cookie;
+    use crate::protocol::network::{Cookie, CookiePriority, CookieSameSite};
+    use crate::protocol::types::JsFloat;
     use crate::protocol::Method;
+    use std::collections::HashMap;
 
     #[derive(Serialize, Debug)]
     #[serde(rename_all = "camelCase")]
@@ -244,56 +310,12 @@ pub mod methods {
 
     #[derive(Serialize, Debug)]
     #[serde(rename_all = "camelCase")]
-    pub struct SetRequestInterception<'a> {
-        pub patterns: &'a [RequestPattern<'a>],
-    }
-
-    #[derive(Deserialize, Debug, Clone)]
-    #[serde(rename_all = "camelCase")]
-    pub struct SetRequestInterceptionReturnObject {}
-
-    impl<'a> Method for SetRequestInterception<'a> {
-        const NAME: &'static str = "Network.setRequestInterception";
-        type ReturnObject = SetRequestInterceptionReturnObject;
-    }
-
-    #[derive(Serialize, Debug)]
-    #[serde(rename_all = "camelCase")]
     pub struct AuthChallengeResponse<'a> {
         pub response: &'a str,
         #[serde(skip_serializing_if = "Option::is_none")]
         pub username: Option<&'a str>,
         #[serde(skip_serializing_if = "Option::is_none")]
         pub password: Option<&'a str>,
-    }
-
-    #[derive(Serialize, Debug, Default)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ContinueInterceptedRequest<'a> {
-        pub interception_id: &'a str,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub error_reason: Option<&'a str>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub raw_response: Option<&'a str>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub url: Option<&'a str>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub method: Option<&'a str>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub post_data: Option<&'a str>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub headers: Option<HashMap<&'a str, &'a str>>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub auth_challenge_response: Option<AuthChallengeResponse<'a>>,
-    }
-
-    #[derive(Deserialize, Debug, Clone)]
-    #[serde(rename_all = "camelCase")]
-    pub struct ContinueInterceptedRequestReturnObject {}
-
-    impl<'a> Method for ContinueInterceptedRequest<'a> {
-        const NAME: &'static str = "Network.continueInterceptedRequest";
-        type ReturnObject = ContinueInterceptedRequestReturnObject;
     }
 
     #[derive(Serialize, Debug)]
@@ -366,5 +388,106 @@ pub mod methods {
     impl<'a> Method for GetCookies {
         const NAME: &'static str = "Network.getCookies";
         type ReturnObject = GetCookiesReturnObject;
+    }
+
+    /// https://chromedevtools.github.io/devtools-protocol/tot/Network/#type-CookieParam
+    /// https://chromedevtools.github.io/devtools-protocol/tot/Network/#method-setCookie
+    /// TODO: impl From<Cookie>
+    #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SetCookie {
+        pub name: String,
+        pub value: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub url: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub domain: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub path: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub secure: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub http_only: Option<bool>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub same_site: Option<CookieSameSite>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub expires: Option<JsFloat>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub priority: Option<CookiePriority>,
+    }
+
+    #[derive(Deserialize, Debug, Clone)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SetCookieReturnObject {
+        pub success: Option<bool>,
+    }
+
+    impl<'a> Method for SetCookie {
+        const NAME: &'static str = "Network.setCookie";
+        type ReturnObject = SetCookieReturnObject;
+    }
+
+    /// https://chromedevtools.github.io/devtools-protocol/tot/Network/#type-CookieParam
+    /// https://chromedevtools.github.io/devtools-protocol/tot/Network/#method-setCookies
+    #[derive(Serialize, Debug)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SetCookies {
+        pub cookies: Vec<SetCookie>,
+    }
+
+    #[derive(Deserialize, Debug, Clone)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SetCookiesReturnObject {}
+
+    impl<'a> Method for SetCookies {
+        const NAME: &'static str = "Network.setCookies";
+        type ReturnObject = SetCookiesReturnObject;
+    }
+
+    /// https://chromedevtools.github.io/devtools-protocol/tot/Network/#method-deleteCookies
+    /// TODO: impl From<Cookie>
+    #[derive(Serialize, Debug)]
+    #[serde(rename_all = "camelCase")]
+    pub struct DeleteCookies {
+        pub name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub url: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub domain: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub path: Option<String>,
+    }
+
+    impl From<SetCookie> for DeleteCookies {
+        fn from(v: SetCookie) -> Self {
+            Self {
+                name: v.name,
+                url: v.url,
+                domain: v.domain,
+                path: v.path,
+            }
+        }
+    }
+    #[derive(Serialize, Debug)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SetExtraHTTPHeaders<'a> {
+        pub headers: HashMap<&'a str, &'a str>,
+    }
+
+    #[derive(Deserialize, Debug, Clone)]
+    #[serde(rename_all = "camelCase")]
+    pub struct DeleteCookiesReturnObject {}
+
+    impl<'a> Method for DeleteCookies {
+        const NAME: &'static str = "Network.deleteCookies";
+        type ReturnObject = DeleteCookiesReturnObject;
+    }
+    
+    #[derive(Deserialize, Debug, Clone)]
+    pub struct SetExtraHTTPHeadersReturnObject {}
+
+    impl<'a> Method for SetExtraHTTPHeaders<'a> {
+        const NAME: &'static str = "Network.setExtraHTTPHeaders";
+        type ReturnObject = SetExtraHTTPHeadersReturnObject;
     }
 }

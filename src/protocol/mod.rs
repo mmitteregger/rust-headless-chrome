@@ -4,14 +4,15 @@ use std::fmt::Debug;
 
 use crate::protocol::types::{JsInt, JsUInt};
 use anyhow::Result;
-use serde;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
 pub mod browser;
+pub mod css;
 pub mod debugger;
 pub mod dom;
+pub mod fetch;
 pub mod input;
 pub mod logs;
 pub mod network;
@@ -117,10 +118,20 @@ pub enum Event {
     RequestIntercepted(network::events::RequestInterceptedEvent),
     #[serde(rename = "Network.responseReceived")]
     ResponseReceived(network::events::ResponseReceivedEvent),
+    #[serde(rename = "Fetch.requestPaused")]
+    RequestPaused(fetch::events::RequestPausedEvent),
+    #[serde(rename = "Fetch.authRequired")]
+    AuthRequired(fetch::events::AuthRequiredEvent),
     #[serde(rename = "Log.entryAdded")]
     LogEntryAdded(logs::events::EntryAddedEvent),
     #[serde(rename = "Runtime.exceptionThrown")]
     RuntimeExceptionThrown(runtime::events::ExceptionThrownEvent),
+    #[serde(rename = "Runtime.bindingCalled")]
+    BindingCalled(runtime::events::BindingCalledEvent),
+    #[serde(rename = "Runtime.consoleAPICalled")]
+    ConsoleApiCalled(runtime::events::ConsoleApiCalledEvent),
+    #[serde(rename = "Network.loadingFinished")]
+    LoadingFinished(network::events::LoadingFinishedEvent),
 }
 
 #[derive(Deserialize, Debug, Clone)]

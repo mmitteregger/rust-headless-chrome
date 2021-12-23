@@ -5,6 +5,7 @@ use anyhow::Result;
 use log::*;
 use websocket::client::sync::Client;
 use websocket::stream::sync::TcpStream;
+use websocket::url::Url;
 use websocket::WebSocketError;
 use websocket::{ClientBuilder, OwnedMessage};
 
@@ -24,7 +25,7 @@ impl std::fmt::Debug for WebSocketConnection {
 
 impl WebSocketConnection {
     pub fn new(
-        ws_url: &str,
+        ws_url: &Url,
         process_id: Option<u32>,
         messages_tx: mpsc::Sender<protocol::Message>,
     ) -> Result<Self> {
@@ -105,8 +106,8 @@ impl WebSocketConnection {
         }
     }
 
-    pub fn websocket_connection(ws_url: &str) -> Result<Client<TcpStream>> {
-        let client = ClientBuilder::new(ws_url)?.connect_insecure()?;
+    pub fn websocket_connection(ws_url: &Url) -> Result<Client<TcpStream>> {
+        let client = ClientBuilder::from_url(ws_url).connect_insecure()?;
 
         debug!("Successfully connected to WebSocket: {}", ws_url);
 

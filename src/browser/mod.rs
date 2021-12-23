@@ -6,20 +6,20 @@ use std::time::Duration;
 
 use anyhow::Result;
 use log::*;
-use serde;
 
 use process::Process;
 pub use process::{LaunchOptions, LaunchOptionsBuilder};
 pub use tab::Tab;
 pub use transport::ConnectionClosed;
 use transport::Transport;
+use websocket::url::Url;
 use which::which;
 
 use crate::browser::context::Context;
 use crate::protocol::browser::methods::GetVersion;
 pub use crate::protocol::browser::methods::VersionInformationReturnObject;
 use crate::protocol::target::methods::{CreateTarget, SetDiscoverTargets};
-use crate::protocol::{self, Event};
+use crate::protocol::{self, css, Event};
 use crate::util;
 
 #[cfg(feature = "fetch")]
@@ -30,7 +30,9 @@ pub mod context;
 mod fetcher;
 mod process;
 pub mod tab;
-mod transport;
+pub mod transport;
+
+use protocol::dom::methods;
 
 /// A handle to an instance of Chrome / Chromium, which wraps a WebSocket connection to its debugging port.
 ///
@@ -106,11 +108,23 @@ impl Browser {
     }
 
     /// Allows you to drive an externally-launched Chrome process instead of launch one via [`new`].
+    /// If the browser is idle for 30 seconds, the connection will be dropped.
     pub fn connect(debug_ws_url: String) -> Result<Self> {
-        let transport = Arc::new(Transport::new(debug_ws_url, None, Duration::from_secs(30))?);
+        Self::connect_with_timeout(debug_ws_url, Duration::from_secs(30))
+    }
+
+    /// Allows you to drive an externally-launched Chrome process instead of launch one via [`new`].
+    /// If the browser is idle for `idle_browser_timeout`, the connection will be dropped.
+    pub fn connect_with_timeout(
+        debug_ws_url: String,
+        idle_browser_timeout: Duration,
+    ) -> Result<Self> {
+        let url = Url::parse(&debug_ws_url)?;
+
+        let transport = Arc::new(Transport::new(url, None, idle_browser_timeout)?);
         trace!("created transport");
 
-        Self::create_browser(None, transport, Duration::from_secs(30))
+        Self::create_browser(None, transport, idle_browser_timeout)
     }
 
     fn create_browser(
@@ -143,7 +157,10 @@ impl Browser {
         trace!("Calling set discover");
         browser.call_method(SetDiscoverTargets { discover: true })?;
 
-        browser.wait_for_initial_tab()?;
+        let tab = browser.wait_for_initial_tab()?;
+
+        tab.call_method(methods::Enable {})?;
+        tab.call_method(css::methods::Enable {})?;
 
         Ok(browser)
     }

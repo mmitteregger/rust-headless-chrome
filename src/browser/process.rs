@@ -13,6 +13,7 @@ use rand::seq::SliceRandom;
 use rand::thread_rng;
 use regex::Regex;
 use thiserror::Error;
+use websocket::url::Url;
 #[cfg(windows)]
 use winreg::{enums::HKEY_LOCAL_MACHINE, RegKey};
 
@@ -26,7 +27,7 @@ use std::collections::HashMap;
 
 pub struct Process {
     child_process: TemporaryProcess,
-    pub debug_ws_url: String,
+    pub debug_ws_url: Url,
 }
 
 #[derive(Debug, Error)]
@@ -63,31 +64,36 @@ impl Drop for TemporaryProcess {
 pub struct LaunchOptions<'a> {
     /// Determines whether to run headless version of the browser. Defaults to true.
     #[builder(default = "true")]
-    headless: bool,
+    pub headless: bool,
 
     /// Determines whether to run the browser with a sandbox.
     #[builder(default = "true")]
-    sandbox: bool,
+    pub sandbox: bool,
 
     /// Launch the browser with a specific window width and height.
     #[builder(default = "None")]
-    window_size: Option<(u32, u32)>,
+    pub window_size: Option<(u32, u32)>,
 
     /// Launch the browser with a specific debugging port.
     #[builder(default = "None")]
-    port: Option<u16>,
+    pub port: Option<u16>,
+    /// Determines whether SSL certificates should be verified.
+    /// This is unsafe and can lead to MiTM attacks. Make sure you understand the risks
+    /// See https://www.owasp.org/index.php/Man-in-the-middle_attack
+    #[builder(default = "true")]
+    pub ignore_certificate_errors: bool,
 
     /// Path for Chrome or Chromium.
     ///
     /// If unspecified, the create will try to automatically detect a suitable binary.
     #[builder(default = "None")]
-    path: Option<std::path::PathBuf>,
+    pub path: Option<std::path::PathBuf>,
 
     /// User Data (Profile) to use.
     ///
     /// If unspecified, a new temp directory is created and used on every launch.
     #[builder(default = "None")]
-    user_data_dir: Option<std::path::PathBuf>,
+    pub user_data_dir: Option<std::path::PathBuf>,
 
     /// A list of Chrome extensions to load.
     ///
@@ -97,7 +103,12 @@ pub struct LaunchOptions<'a> {
     /// Note that Chrome does not support loading extensions in headless-mode.
     /// See https://bugs.chromium.org/p/chromium/issues/detail?id=706008#c5
     #[builder(default)]
-    extensions: Vec<&'a OsStr>,
+    pub extensions: Vec<&'a OsStr>,
+
+    /// Additional arguments to pass to the browser instance. The list of Chromium
+    /// flags can be found: http://peter.sh/experiments/chromium-command-line-switches/.
+    #[builder(default)]
+    pub args: Vec<&'a OsStr>,
 
     /// The options to use for fetching a version of chrome when `path` is None.
     ///
@@ -109,13 +120,33 @@ pub struct LaunchOptions<'a> {
 
     /// How long to keep the WebSocket to the browser for after not receiving any events from it
     /// Defaults to 300 seconds
-    #[builder(default = "Duration::from_secs(300)")]
+    #[builder(default = "Duration::from_secs(30)")]
     pub idle_browser_timeout: Duration,
 
     /// Environment variables to set for the Chromium process.
     /// Passes value through to std::process::Command::envs.
     #[builder(default = "None")]
     pub process_envs: Option<HashMap<String, String>>,
+}
+
+impl<'a> Default for LaunchOptions<'a> {
+    fn default() -> Self {
+        LaunchOptions {
+            headless: true,
+            sandbox: true,
+            idle_browser_timeout: Duration::from_secs(30),
+            window_size: None,
+            path: None,
+            user_data_dir: None,
+            port: None,
+            ignore_certificate_errors: true,
+            extensions: Vec::new(),
+            process_envs: None,
+            #[cfg(feature = "fetch")]
+            fetcher_options: Default::default(),
+            args: Vec::new(),
+        }
+    }
 }
 
 impl<'a> LaunchOptions<'a> {
@@ -202,6 +233,9 @@ impl Process {
             attempts += 1;
         }
 
+        let mut child = process.0.borrow_mut();
+        child.stderr = None;
+
         Ok(Self {
             child_process: process,
             debug_ws_url: url,
@@ -251,12 +285,25 @@ impl Process {
 
         args.extend(&DEFAULT_ARGS);
 
+        if !launch_options.args.is_empty() {
+            let extra_args: Vec<&str> = launch_options
+                .args
+                .iter()
+                .map(|a| a.to_str().unwrap())
+                .collect();
+            args.extend(extra_args);
+        }
+
         if !window_size_option.is_empty() {
             args.extend(&[window_size_option.as_str()]);
         }
 
         if launch_options.headless {
             args.extend(&["--headless"]);
+        }
+
+        if launch_options.ignore_certificate_errors {
+            args.extend(&["--ignore-certificate-errors"])
         }
 
         if !launch_options.sandbox {
@@ -291,7 +338,7 @@ impl Process {
     where
         R: Read,
     {
-        let port_taken_re = Regex::new(r"ERROR.*bind").unwrap();
+        let port_taken_re = Regex::new(r"ERROR.*bind\(\)").unwrap();
 
         let re = Regex::new(r"listening on (.*/devtools/browser/.*)$").unwrap();
 
@@ -317,7 +364,7 @@ impl Process {
         Ok(None)
     }
 
-    fn ws_url_from_output(child_process: &mut Child) -> Result<String> {
+    fn ws_url_from_output(child_process: &mut Child) -> Result<Url> {
         let chrome_output_result = util::Wait::with_timeout(Duration::from_secs(30)).until(|| {
             let my_stderr = BufReader::new(child_process.stderr.as_mut().unwrap());
             match Self::ws_url_from_reader(my_stderr) {
@@ -333,7 +380,7 @@ impl Process {
         });
 
         if let Ok(output_result) = chrome_output_result {
-            output_result
+            Ok(Url::parse(&output_result?)?)
         } else {
             Err(ChromeLaunchError::PortOpenTimeout {}.into())
         }
@@ -433,7 +480,18 @@ mod tests {
         let lines = "[0228/194641.093619:ERROR:socket_posix.cc(144)] bind() returned an error, errno=0: Cannot assign requested address (99)";
         let reader = BufReader::new(lines.as_bytes());
         let ws_url_result = Process::ws_url_from_reader(reader);
-        assert_eq!(true, ws_url_result.is_err());
+        assert!(ws_url_result.is_err());
+    }
+
+    #[test]
+    fn handle_errors_in_chrome_output_gvisor_netlink() {
+        // see https://github.com/atroche/rust-headless-chrome/issues/261
+        setup();
+        let lines = "[0703/145506.975691:ERROR:address_tracker_linux.cc(214)] Could not bind NETLINK socket: Permission denied (13)";
+
+        let reader = BufReader::new(lines.as_bytes());
+        let ws_url_result = Process::ws_url_from_reader(reader);
+        assert_eq!(true, ws_url_result.is_ok());
     }
 
     #[cfg(target_os = "linux")]

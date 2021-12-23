@@ -6,11 +6,17 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use base64;
+use headless_chrome::LaunchOptionsBuilder;
 use log::*;
 use rand::prelude::*;
 
-use headless_chrome::browser::tab::RequestInterceptionDecision;
-use headless_chrome::protocol::network::methods::RequestPattern;
+use headless_chrome::browser::tab::RequestPausedDecision;
+use headless_chrome::browser::transport::{SessionId, Transport};
+use headless_chrome::protocol::dom::RGBA;
+use headless_chrome::protocol::fetch::events::RequestPausedEvent;
+use headless_chrome::protocol::fetch::methods::{FulfillRequest, RequestPattern};
+use headless_chrome::protocol::fetch::HeaderEntry;
+use headless_chrome::protocol::network::methods::SetCookie;
 use headless_chrome::protocol::network::Cookie;
 use headless_chrome::protocol::runtime::methods::{RemoteObjectSubtype, RemoteObjectType};
 use headless_chrome::protocol::RemoteError;
@@ -20,6 +26,7 @@ use headless_chrome::{
     protocol::page::ScreenshotFormat,
     Browser, Tab,
 };
+use std::collections::HashMap;
 
 pub mod logging;
 pub mod server;
@@ -36,7 +43,13 @@ fn dumb_server(data: &'static str) -> (server::Server, Browser, Arc<Tab>) {
 }
 
 fn browser() -> Browser {
-    Browser::default().unwrap()
+    Browser::new(
+        LaunchOptionsBuilder::default()
+            .headless(true)
+            .build()
+            .unwrap(),
+    )
+    .unwrap()
 }
 
 fn dumb_client(server: &server::Server) -> (Browser, Arc<Tab>) {
@@ -187,6 +200,37 @@ fn sum_of_errors(inp: &[u8], fixture: &[u8]) -> u32 {
                 .sum::<u32>()
         })
         .sum()
+}
+
+#[test]
+fn set_background_color() -> Fallible<()> {
+    logging::enable_logging();
+    let (_, browser, tab) = dumb_server(include_str!("transparent.html"));
+    tab.wait_for_element("body")?;
+    // Check that the top-left pixel on the page has the background color set in transparent.html
+    tab.set_background_color(RGBA {
+        r: 255,
+        g: 0,
+        b: 0,
+        a: 1.,
+    })?;
+    let png_data = tab.capture_screenshot(ScreenshotFormat::PNG, None, true)?;
+    let buf = decode_png(&png_data[..])?;
+    assert!(sum_of_errors(&buf[0..4], &[0xff, 0x00, 0x00, 0xff]) < 5);
+    Ok(())
+}
+
+#[test]
+fn set_transparent_background_color() -> Fallible<()> {
+    logging::enable_logging();
+    let (_, browser, tab) = dumb_server(include_str!("transparent.html"));
+    tab.wait_for_element("body")?;
+    // Check that the top-left pixel on the page has the background color set in transparent.html
+    tab.set_transparent_background_color()?;
+    let png_data = tab.capture_screenshot(ScreenshotFormat::PNG, None, true)?;
+    let buf = decode_png(&png_data[..])?;
+    assert!(sum_of_errors(&buf[0..4], &[0x00, 0x00, 0x00, 0x00]) < 5);
+    Ok(())
 }
 
 #[test]
@@ -347,10 +391,13 @@ fn find_elements() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
     let divs = tab.wait_for_elements("div")?;
+    let divs_xpath = tab.wait_for_elements_by_xpath("//*[@id]")?;
     assert_eq!(8, divs.len());
+    assert_eq!(7, divs_xpath.len());
     Ok(())
 }
 
+/*
 #[test]
 fn find_element_on_tab_and_other_elements() -> Result<()> {
     logging::enable_logging();
@@ -360,6 +407,21 @@ fn find_element_on_tab_and_other_elements() -> Result<()> {
     dbg!(&inner_element);
     let attrs = inner_element.get_attributes()?.unwrap();
     assert_eq!(attrs["id"], "strictly-above");
+    Ok(())
+}
+*/
+
+#[test]
+fn find_element_on_tab_by_xpath() -> Fallible<()> {
+    logging::enable_logging();
+    let (server, browser, tab) = dumb_server(include_str!("simple.html"));
+    let containing_element_xpath = tab.wait_for_xpath("/html/body/div[2]")?;
+    let inner_element_xpath =
+        containing_element_xpath.wait_for_xpath(r#"//*[@id="strictly-above"]"#)?;
+    dbg!(&inner_element_xpath);
+    let attrs = inner_element_xpath.get_attributes()?.unwrap();
+    assert_eq!(attrs["id"], "strictly-above");
+
     Ok(())
 }
 
@@ -410,7 +472,7 @@ fn call_js_fn_sync() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
     let element = tab.wait_for_element("#foobar")?;
-    let result = element.call_js_fn("function() { return 42 }", false)?;
+    let result = element.call_js_fn("function() { return 42 }", vec![], false)?;
     assert_eq!(result.object_type, RemoteObjectType::Number);
     assert_eq!(result.description, Some("42".to_owned()));
     assert_eq!(result.value, Some((42).into()));
@@ -422,7 +484,7 @@ fn call_js_fn_async_unresolved() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
     let element = tab.wait_for_element("#foobar")?;
-    let result = element.call_js_fn("async function() { return 42 }", false)?;
+    let result = element.call_js_fn("async function() { return 42 }", vec![], false)?;
     assert_eq!(result.object_type, RemoteObjectType::Object);
     assert_eq!(result.subtype, Some(RemoteObjectSubtype::Promise));
     assert_eq!(result.description, Some("Promise".to_owned()));
@@ -435,7 +497,7 @@ fn call_js_fn_async_resolved() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
     let element = tab.wait_for_element("#foobar")?;
-    let result = element.call_js_fn("async function() { return 42 }", true)?;
+    let result = element.call_js_fn("async function() { return 42 }", vec![], true)?;
     assert_eq!(result.object_type, RemoteObjectType::Number);
     assert_eq!(result.subtype, None);
     assert_eq!(result.description, Some("42".to_owned()));
@@ -489,54 +551,62 @@ fn set_request_interception() -> Result<()> {
         RequestPattern {
             url_pattern: None,
             resource_type: None,
-            interception_stage: Some("HeadersReceived"),
+            request_stage: Some("HeadersReceived"),
         },
         RequestPattern {
             url_pattern: None,
             resource_type: None,
-            interception_stage: Some("Request"),
+            request_stage: Some("Request"),
         },
     ];
+    tab.enable_fetch(Some(&patterns), None)?;
 
-    tab.enable_request_interception(
-        &patterns,
-        Box::new(|transport, session_id, intercepted| {
-            if intercepted.request.url.ends_with(".js") {
+    tab.enable_request_interception(Arc::new(
+        move |transport: Arc<Transport>, session_id: SessionId, intercepted: RequestPausedEvent| {
+            if intercepted.params.request.url.ends_with(".js") {
                 let js_body = r#"document.body.appendChild(document.createElement("hr"));"#;
-                let js_response = tiny_http::Response::new(
-                    200.into(),
-                    vec![tiny_http::Header::from_bytes(
-                        &b"Content-Type"[..],
-                        &b"application/javascript"[..],
-                    )
-                    .unwrap()],
-                    js_body.as_bytes(),
-                    Some(js_body.len()),
-                    None,
-                );
 
-                let mut wrapped_writer = Vec::new();
-                js_response
-                    .raw_print(&mut wrapped_writer, (1, 2).into(), &[], false, None)
-                    .unwrap();
+                let headers = vec![HeaderEntry {
+                    name: "Content-Type".to_string(),
+                    value: "application/javascript".to_string(),
+                }];
 
-                let base64_response = base64::encode(&wrapped_writer);
+                let fulfill_request = FulfillRequest {
+                    request_id: intercepted.params.request_id,
+                    response_code: 200,
+                    response_headers: Some(headers),
+                    binary_response_headers: None,
+                    body: Some(base64::encode(js_body)),
+                    response_phrase: None,
+                };
 
-                RequestInterceptionDecision::Response(base64_response)
+                RequestPausedDecision::Fulfill(fulfill_request)
             } else {
-                RequestInterceptionDecision::Continue
+                RequestPausedDecision::Continue(None)
             }
-        }),
-    )?;
+        },
+    ))?;
 
     // ignore cache:
+
     tab.navigate_to(&format!("http://127.0.0.1:{}", server.port()))
         .unwrap();
-
     tab.wait_until_navigated()?;
-
     // There are two JS scripts that get loaded via network, they both append an element like this:
     assert_eq!(2, tab.wait_for_elements("hr")?.len());
+
+    Ok(())
+}
+
+#[test]
+fn authentication() -> Fallible<()> {
+    logging::enable_logging();
+    let browser = Browser::default()?;
+    let tab = browser.wait_for_initial_tab()?;
+    tab.authenticate(Some("login".to_string()), Some("password".to_string()))?;
+    tab.enable_fetch(None, Some(true))?;
+    tab.navigate_to("http://httpbin.org/basic-auth/login/password")?;
+    tab.wait_until_navigated()?;
 
     Ok(())
 }
@@ -634,7 +704,7 @@ fn get_script_source() -> Result<()> {
 }
 
 #[test]
-fn get_cookies() -> Result<()> {
+fn read_write_cookies() -> Result<()> {
     logging::enable_logging();
     let responder = move |r: tiny_http::Request| {
         let response = tiny_http::Response::new(
@@ -653,18 +723,49 @@ fn get_cookies() -> Result<()> {
     let server = server::Server::new(responder);
     let (browser, tab) = dumb_client(&server);
 
-    tab.navigate_to(&server.url())?;
+    // can read cookies
+    {
+        tab.navigate_to(&server.url())?;
 
-    tab.wait_until_navigated()?;
+        tab.wait_until_navigated()?;
 
-    let cookies = tab.get_cookies()?;
+        let cookies = tab.get_cookies()?;
 
-    assert_eq!(cookies.len(), 1);
+        assert_eq!(cookies.len(), 1);
 
-    let Cookie { name, value, .. } = cookies.first().unwrap();
+        let Cookie { name, value, .. } = cookies.first().unwrap();
 
-    assert_eq!(name, "testing");
-    assert_eq!(value, "1");
+        assert_eq!(name, "testing");
+        assert_eq!(value, "1");
+
+        let t: Fallible<()> = Ok(()); // type hint for error
+        t
+    }?;
+
+    // can change (delete and set) value for current url
+    {
+        tab.set_cookies(vec![SetCookie {
+            name: "testing".to_string(),
+            value: "2".to_string(),
+            url: None,
+            domain: None,
+            path: None,
+            secure: None,
+            http_only: None,
+            same_site: None,
+            expires: None,
+            priority: None,
+        }])?;
+
+        let cookies = tab.get_cookies()?;
+        assert_eq!(cookies.len(), 1);
+        let cf = cookies.first().unwrap();
+        assert_eq!(cf.name, "testing");
+        assert_eq!(cf.value, "2");
+
+        let t: Fallible<()> = Ok(()); // type hint for error
+        t
+    }?;
 
     Ok(())
 }
@@ -723,5 +824,57 @@ fn parses_shadow_doms() -> Result<()> {
     logging::enable_logging();
     let (_, browser, tab) = dumb_server(include_str!("shadow-dom.html"));
     tab.wait_for_element("html")?;
+    Ok(())
+}
+
+#[test]
+fn set_extra_http_headers() -> Fallible<()> {
+    let (server, browser, tab) = dumb_server(include_str!("simple.html"));
+    let mut headers = HashMap::new();
+    headers.insert("test", "header");
+    tab.set_extra_http_headers(headers)?;
+    tab.enable_fetch(None, None)?;
+
+    tab.enable_request_interception(Arc::new(
+        |transport: Arc<Transport>, session_id: SessionId, intercepted: RequestPausedEvent| {
+            assert_eq!(
+                intercepted.params.request.headers.get("test"),
+                Some(&"header".to_string())
+            );
+            RequestPausedDecision::Continue(None)
+        },
+    ))?;
+
+    tab.navigate_to(&format!("http://127.0.0.1:{}", server.port()))?
+        .wait_until_navigated()?;
+    Ok(())
+}
+
+#[test]
+fn get_css_styles() -> Fallible<()> {
+    let (server, browser, tab) = dumb_server(include_str!("simple.html"));
+
+    tab.navigate_to(&format!("http://127.0.0.1:{}", server.port()))?
+        .wait_until_navigated()?;
+
+    let element = tab.wait_for_element("#within")?;
+
+    let styles = element.get_computed_styles()?;
+
+    let v = styles
+        .iter()
+        .filter_map(|p| {
+            if p.name == "top" || p.name == "background-color" || p.name == "position" {
+                Some(p.value.as_str())
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<&str>>();
+
+    assert!(v.len() > 0);
+
+    assert_eq!(["rgb(255, 255, 0)", "absolute", "5px"], v.as_slice());
+
     Ok(())
 }

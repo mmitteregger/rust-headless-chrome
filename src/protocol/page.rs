@@ -130,6 +130,7 @@ pub mod methods {
     use serde::{Deserialize, Serialize};
 
     use crate::protocol::Method;
+    use crate::protocol::dom::RGBA;
 
     use super::PrintToPdfOptions;
     use crate::protocol::types::JsUInt;
@@ -292,5 +293,47 @@ pub mod methods {
     impl Method for HandleFileChooser {
         const NAME: &'static str = "Page.handleFileChooser";
         type ReturnObject = HandleFileChooserReturnObject;
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    pub struct AddScriptToEvaluateOnNewDocument {
+        pub source: String,
+    }
+
+    #[derive(Deserialize, Serialize, Debug, Clone, PartialEq)]
+    #[serde(rename_all = "camelCase")]
+    pub struct AddScriptToEvaluateOnNewDocumentReturnObject {
+        pub identifier: String,
+    }
+
+    impl Method for AddScriptToEvaluateOnNewDocument {
+        const NAME: &'static str = "Page.addScriptToEvaluateOnNewDocument";
+        type ReturnObject = AddScriptToEvaluateOnNewDocumentReturnObject;
+    }
+
+    #[derive(Serialize, Debug)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SetDefaultBackgroundColorOverride {
+        pub color: RGBA,
+    }
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SetDefaultBackgroundColorOverrideReturnObject {}
+    impl Method for SetDefaultBackgroundColorOverride {
+        const NAME: &'static str = "Emulation.setDefaultBackgroundColorOverride";
+        type ReturnObject = SetDefaultBackgroundColorOverrideReturnObject;
+    }
+
+    #[derive(Serialize, Debug)]
+    #[serde(rename_all = "camelCase")]
+    pub struct StopLoading {}
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct StopLoadingReturnObject {}
+    impl Method for StopLoading {
+        const NAME: &'static str = "Page.stopLoading";
+        type ReturnObject = StopLoadingReturnObject;
     }
 }
