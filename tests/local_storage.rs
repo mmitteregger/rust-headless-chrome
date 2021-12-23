@@ -1,4 +1,4 @@
-use failure::Fallible;
+use anyhow::Result;
 use headless_chrome::{Browser, LaunchOptionsBuilder};
 use serde::{Deserialize, Serialize};
 
@@ -10,7 +10,7 @@ struct Item {
 }
 
 #[test]
-fn read_write_local_storage() -> Fallible<()> {
+fn read_write_local_storage() -> Result<()> {
     let server = server::Server::with_dumb_html(include_str!("simple.html"));
 
     let browser = Browser::new(
@@ -44,7 +44,7 @@ fn read_write_local_storage() -> Fallible<()> {
 
     let item: Item = tab.get_storage("testItem")?;
 
-    assert_eq!(300,item.value);
+    assert_eq!(300, item.value);
 
     Ok(())
 }

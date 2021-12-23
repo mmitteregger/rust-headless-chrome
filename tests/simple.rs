@@ -153,7 +153,7 @@ fn actions_on_tab_wont_hang_after_browser_drops() -> Result<()> {
         let (_, browser, tab) = dumb_server(include_str!("simple.html"));
         std::thread::spawn(move || {
             let mut rng = rand::thread_rng();
-            let millis: u64 = rng.gen_range(0, 5000);
+            let millis: u64 = rng.gen_range(0..=5000);
             std::thread::sleep(std::time::Duration::from_millis(millis));
             trace!("dropping browser");
             drop(browser);
@@ -185,8 +185,8 @@ fn form_interaction() -> Result<()> {
 
 fn decode_png(i: &[u8]) -> Result<Vec<u8>> {
     let decoder = png::Decoder::new(&i[..]);
-    let (info, mut reader) = decoder.read_info()?;
-    let mut buf = vec![0; info.buffer_size()];
+    let mut reader = decoder.read_info()?;
+    let mut buf = vec![0; reader.output_buffer_size()];
     reader.next_frame(&mut buf)?;
     Ok(buf)
 }
@@ -203,7 +203,7 @@ fn sum_of_errors(inp: &[u8], fixture: &[u8]) -> u32 {
 }
 
 #[test]
-fn set_background_color() -> Fallible<()> {
+fn set_background_color() -> Result<()> {
     logging::enable_logging();
     let (_, browser, tab) = dumb_server(include_str!("transparent.html"));
     tab.wait_for_element("body")?;
@@ -221,7 +221,7 @@ fn set_background_color() -> Fallible<()> {
 }
 
 #[test]
-fn set_transparent_background_color() -> Fallible<()> {
+fn set_transparent_background_color() -> Result<()> {
     logging::enable_logging();
     let (_, browser, tab) = dumb_server(include_str!("transparent.html"));
     tab.wait_for_element("body")?;
@@ -412,7 +412,7 @@ fn find_element_on_tab_and_other_elements() -> Result<()> {
 */
 
 #[test]
-fn find_element_on_tab_by_xpath() -> Fallible<()> {
+fn find_element_on_tab_by_xpath() -> Result<()> {
     logging::enable_logging();
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
     let containing_element_xpath = tab.wait_for_xpath("/html/body/div[2]")?;
@@ -599,7 +599,7 @@ fn set_request_interception() -> Result<()> {
 }
 
 #[test]
-fn authentication() -> Fallible<()> {
+fn authentication() -> Result<()> {
     logging::enable_logging();
     let browser = Browser::default()?;
     let tab = browser.wait_for_initial_tab()?;
@@ -738,7 +738,7 @@ fn read_write_cookies() -> Result<()> {
         assert_eq!(name, "testing");
         assert_eq!(value, "1");
 
-        let t: Fallible<()> = Ok(()); // type hint for error
+        let t: Result<()> = Ok(()); // type hint for error
         t
     }?;
 
@@ -763,7 +763,7 @@ fn read_write_cookies() -> Result<()> {
         assert_eq!(cf.name, "testing");
         assert_eq!(cf.value, "2");
 
-        let t: Fallible<()> = Ok(()); // type hint for error
+        let t: Result<()> = Ok(()); // type hint for error
         t
     }?;
 
@@ -828,7 +828,7 @@ fn parses_shadow_doms() -> Result<()> {
 }
 
 #[test]
-fn set_extra_http_headers() -> Fallible<()> {
+fn set_extra_http_headers() -> Result<()> {
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
     let mut headers = HashMap::new();
     headers.insert("test", "header");
@@ -851,7 +851,7 @@ fn set_extra_http_headers() -> Fallible<()> {
 }
 
 #[test]
-fn get_css_styles() -> Fallible<()> {
+fn get_css_styles() -> Result<()> {
     let (server, browser, tab) = dumb_server(include_str!("simple.html"));
 
     tab.navigate_to(&format!("http://127.0.0.1:{}", server.port()))?

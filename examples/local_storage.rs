@@ -1,8 +1,8 @@
-use failure::Fallible;
+use anyhow::Result;
 
 use headless_chrome::{Browser, LaunchOptions};
 
-fn main() -> Fallible<()> {
+fn main() -> Result<()> {
     let browser = Browser::new(
         LaunchOptions::default_builder()
             .build()
@@ -18,7 +18,7 @@ fn main() -> Fallible<()> {
 
     let item: String = tab.get_storage("translationHash")?;
 
-    println!("{}",item);
+    println!("{}", item);
 
     Ok(())
 }

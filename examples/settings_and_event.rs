@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use failure::Fallible;
+use anyhow::Result;
 
 use headless_chrome::{protocol::Event, Browser, LaunchOptions};
 
-fn start() -> Fallible<()> {
+fn start() -> Result<()> {
     let browser = Browser::new(LaunchOptions {
         headless: false,
         ..Default::default()
@@ -33,6 +33,6 @@ fn start() -> Fallible<()> {
     Ok(())
 }
 
-fn main() -> Fallible<()> {
+fn main() -> Result<()> {
     start()
 }
