@@ -17,25 +17,25 @@ serde_json = "1"
 thiserror = "1"
 anyhow = "1"
 log = "0.4"
-rand = "0.7"
+rand = "0.8"
 tempfile = "3"
 base64 = "0.13"
-derive_builder = "0.9"
+derive_builder = "0.10"
 which = "4.0"
-ureq = { version = "1.5", optional = true }
+ureq = { version = "2.4", optional = true }
 directories-next = { version = "2.0", optional = true }
 zip = { version = "^0.5.3", optional = true }
 walkdir = { version = "2", optional = true }
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.7"
+winreg = "0.10"
 
 [dev-dependencies]
-env_logger = "0.8"
+env_logger = "0.9"
 chrono = { version = "0.4", default_features = false }
-tiny_http = "0.7"
-png = { version = "0.16" }
-jpeg-decoder = { version = "0.1", default_features = false }
+tiny_http = "0.9"
+png = { version = "0.17" }
+jpeg-decoder = { version = "0.2", default_features = false }
 filepath = "0.1.1"
 
 [lib]

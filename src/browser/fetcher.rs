@@ -204,7 +204,7 @@ impl Fetcher {
         info!("Creating file for download: {}", &path.display());
         let mut file = OpenOptions::new().create(true).write(true).open(&path)?;
 
-        let resp = ureq::get(&url).call();
+        let resp = ureq::get(&url).call()?;
         io::copy(&mut resp.into_reader(), &mut file)?;
 
         Ok(path)
@@ -310,7 +310,7 @@ impl Fetcher {
 }
 
 fn get_size<U: AsRef<str>>(url: U) -> Result<u64> {
-    let resp = ureq::get(url.as_ref()).call();
+    let resp = ureq::get(url.as_ref()).call()?;
     match resp.header("Content-Length") {
         Some(len) => Ok(u64::from_str(len)? / 2_u64.pow(20)),
         None => bail!("response doesn't include the content length"),
